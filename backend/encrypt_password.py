@@ -12,3 +12,5 @@ encrypted_password = cipher.encrypt(password.encode())
 
 print("Encrypted Password:")
 print(encrypted_password.decode())
+
+print("Congrats! Good Job")
