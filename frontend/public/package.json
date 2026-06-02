@@ -1,0 +1,11 @@
+{
+  "name": "mjscribe-frontend",
+  "version": "1.0.0",
+  "description": "Frontend for MJScribe App",
+  "scripts": {
+    "serve": "http-server public -p 3000 -c-1 --cors"
+  },
+  "devDependencies": {
+    "http-server": "^14.1.1" 
+  }
+}

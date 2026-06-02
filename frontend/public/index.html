@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PCScribe - AI Medical Assistant</title>
+    <link rel="stylesheet" href="css/style.css">
+    <!-- <link rel="shortcut icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E⚕️%3C/text%3E%3C/svg%3E" type="image/svg+xml"> -->
+    <link rel="shortcut icon" href="images/logo3.png" type="image/png">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <!-- Login Page -->
+    <div id="loginPage" class="login-container">
+        <div class="login-left">
+            <div class="login-logo">
+                <div class="logo-icon">
+                    <img src="/images/logo3.png" alt="PCScribe Logo" style="width: 100%; height: 100%; object-fit: contain;">
+                </div>
+            </div>
+            <p class="tagline">Real-Time Documentation. Powered by Precision.</p>
+        </div>
+        <div class="login-right">
+            <div class="login-form">
+                <div class="auth-tabs">
+                    <button class="auth-tab active" id="signInTab" onclick="switchAuthTab('signin')">Sign In</button>
+                    <button class="auth-tab" id="signUpTab" onclick="switchAuthTab('signup')">Sign Up</button>
+                </div>
+                
+                <div id="loginError" class="login-error"></div>
+                <div id="loginSuccess" class="login-success"></div>
+
+                <!-- Sign In Form -->
+                <form id="loginForm" class="auth-form active-form">
+                    <h2>Welcome Back</h2>
+                    <p>Please sign in to your account</p>
+                    <div class="form-group">
+                        <label for="username">Email</label>
+                        <input type="email" id="username" name="username" placeholder="Enter your email" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <input type="password" id="password" name="password" placeholder="Enter your password" required>
+                    </div>
+                    <button type="submit" class="login-btn">
+                        <span class="btn-text">Sign In</span>
+                        <span class="spinner hidden"></span>
+                    </button>
+                    <p class="auth-switch-text">Don't have an account? <a href="#" onclick="switchAuthTab('signup'); return false;">Create one</a></p>
+                </form>
+
+                <!-- Sign Up Form -->
+                <form id="signupForm" class="auth-form">
+                    <h2>Create Account</h2>
+                    <p>Sign up to get started with PCScribe</p>
+                    <div class="form-group">
+                        <label for="signupFullName">Full Name</label>
+                        <input type="text" id="signupFullName" name="full_name" placeholder="e.g., Dr. John Smith">
+                    </div>
+                    <div class="form-group">
+                        <label for="signupEmail">Email</label>
+                        <input type="email" id="signupEmail" name="email" placeholder="Enter your email" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="signupPassword">Password</label>
+                        <input type="password" id="signupPassword" name="password" placeholder="Min 6 characters" required minlength="6">
+                    </div>
+                    <div class="form-group">
+                        <label for="signupConfirmPassword">Confirm Password</label>
+                        <input type="password" id="signupConfirmPassword" name="confirm_password" placeholder="Re-enter your password" required>
+                    </div>
+                    <button type="submit" class="login-btn signup-btn">
+                        <span class="btn-text">Create Account</span>
+                        <span class="spinner hidden"></span>
+                    </button>
+                    <p class="auth-switch-text">Already have an account? <a href="#" onclick="switchAuthTab('signin'); return false;">Sign In</a></p>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Application -->
+    <div id="mainApp" class="app-container" style="display: none;">
+        <header class="app-header">
+            <div class="logo">
+                <img src="/images/logo2.png" alt="PCScribe Logo" style="width: 2.2em; height: 2.5em; vertical-align: -0.4em; margin-right: 2px;">
+                <h1>PCScribe</h1>
+            </div>
+            <nav class="app-nav">
+                <a href="#scribe" class="nav-link active" data-page="scribePageContent">Scribe Note</a>
+                <a href="#manage-patients" class="nav-link" data-page="managePatientsPageContent">Manage Patients</a>
+            </nav>
+            <div class="user-info">
+                <span class="user-name">Dr. Iram Sheikh, MD, DO</span>
+                <button id="logoutBtn" class="btn-logout">
+                    <i class="fas fa-sign-out-alt"></i>
+                </button>
+            </div>
+        </header>
+
+        <main class="app-main-content">
+            <!-- Scribe Note Page Content -->
+            <section id="scribePageContent" class="page-content active-page">
+                <div class="content-wrapper">
+                    <!-- Phase 1: Patient Search -->
+                    <section class="search-section card">
+                        <h2><i class="fas fa-search"></i> Patient Search</h2>
+                        <div class="search-form">
+                            <div class="search-inputs">
+                                <div class="form-group">
+                                    <label for="accountNo">Account No.</label>
+                                    <input type="text" id="accountNo" placeholder="e.g., A123456789">
+                                </div>
+                                <div class="form-group">
+                                    <label for="patientName">Last Name, First Name</label>
+                                    <input type="text" id="patientName" placeholder="e.g., Doe, John">
+                                </div>
+                                 <div class="form-group">
+                                    <label for="patientDob">Date of Birth (Optional)</label>
+                                    <input type="text" id="patientDob" placeholder="MM-DD-YYYY">
+                                </div>
+                                <button type="button" id="searchBtn" class="btn btn-primary">
+                                    <i class="fas fa-search"></i>
+                                    <span>Search</span>
+                                </button>
+                            </div>
+                                </div>
+                        
+                        <div id="searchResults" class="search-results" style="display: none;">
+                            <h3>Search Results</h3>
+                            <div id="patientList" class="patient-list"></div>
+                                    </div>
+                    </section>
+                    <div id="selectedPatientStatus" style="display:none; margin-top: 10px;"></div>
+
+                    <!-- Phase 2: Transcript Source -->
+                    <section id="transcriptSection" class="transcript-section card" style="display: none;">
+                        <h2><i class="fas fa-microphone"></i> Transcript Source</h2>
+                        <div class="transcript-options">
+                            <div class="transcript-option">
+                                <div class="option-card" id="recordOption">
+                                    <i class="fas fa-microphone-alt"></i>
+                                    <h3>Record Audio</h3>
+                                    <p>Record your clinical notes using voice</p>
+                                    <div id="audioRecordingControls" class="audio-controls-vertical" style="display:none; margin-top:10px;">
+                                        <div class="audio-controls-row">
+                                            <button class="btn btn-success" id="startRecordingBtn" type="button">
+                                                <i class="fas fa-play"></i> Start
+                                            </button>
+                                            <button class="btn btn-danger" id="stopRecordingBtn" type="button" disabled>
+                                                <i class="fas fa-stop"></i> Stop
+                                            </button>
+                                            <span id="recordingStatus" style="margin-left:10px; color:green; display:none;">Recording...</span>
+                                        </div>
+                                        <button class="btn btn-primary" id="uploadAudioBtn" type="button" style="margin-top:18px; width: 220px; align-self: flex-start;">
+                                            <i class="fas fa-upload"></i> Transcribe & Save
+                                        </button>
+                                    </div>
+                                    <audio id="audioPlayback" controls style="display:none; margin-top:10px;"></audio>
+                                    <form id="audioUploadForm" style="display:none;">
+                                        <input type="file" id="audioFileInput" accept="audio/*">
+                                    </form>
+                                    <button class="btn btn-secondary btn-record" id="showRecordingControlsBtn" type="button">
+                                        <i class="fas fa-microphone"></i>
+                                        Start Recording
+                                    </button>
+                                </div>
+                                    </div>
+                            <div class="transcript-option">
+                                <div class="option-card" id="uploadOption">
+                                    <i class="fas fa-upload"></i>
+                                    <h3>Upload Transcript</h3>
+                                    <p>Upload an existing transcript file</p>
+                                    <input type="file" id="transcriptFile" accept=".docx" style="display: none;">
+                                    <button class="btn btn-secondary btn-upload">
+                                        <i class="fas fa-upload"></i>
+                                        Choose File
+                                    </button>
+                                </div>
+                                </div>
+                                </div>
+                        
+                        <div id="transcriptInfo" class="transcript-info" style="display: none;">
+                            <h3>Selected Transcript</h3>
+                            <div id="transcriptDetails"></div>
+                            <div class="form-group" style="margin-top: 18px;">
+                                <label for="templateSelect" style="font-weight: 500;">Select Note Template:</label>
+                                <select id="templateSelect" class="form-control" style="margin-top: 6px; min-width: 220px;"></select>
+                            </div>
+                            <button id="generateNoteBtn" class="btn btn-primary btn-generate">
+                                <i class="fas fa-file-medical"></i>
+                                Generate Note
+                            </button>
+                        </div>
+                    </section>
+
+                    <!-- Phase 3: Generated Note -->
+                    <section id="noteSection" class="note-section card" style="display: none;">
+                        <h2><i class="fas fa-file-medical"></i> Generated Clinical Note</h2>
+                        
+                        <div id="notePreview" class="note-preview">
+                            <div class="note-header">
+                                <h3>Preview</h3>
+                                <button id="expandNoteBtn" class="btn btn-secondary btn-expand">
+                                    <i class="fas fa-expand-alt"></i>
+                                    <span>Expand</span>
+                                </button>
+                            </div>
+                            <div id="noteContent" class="note-content collapsed">
+                                <!-- Note content will be inserted here -->
+                            </div>
+                        </div>
+                        
+                        <div class="note-actions">
+                            <button id="downloadNoteBtn" class="btn btn-primary">
+                                <i class="fas fa-download"></i>
+                                Download Note
+                            </button>
+                            <button id="newNoteBtn" class="btn btn-secondary">
+                                <i class="fas fa-plus"></i>
+                                New Note
+                            </button>
+                        </div>
+                    </section>
+                </div>
+            </section>
+
+            <!-- Manage Patients Page -->
+            <section id="managePatientsPageContent" class="page-content">
+                 <div class="content-wrapper">
+                    <section class="patient-management-section card"> 
+                        <h2><i class="fas fa-users"></i> Patient Database Management</h2>
+                        
+                        <div class="add-patient-form">
+                            <h3>Add New Patient</h3>
+                            <form id="addPatientForm">
+                                <div class="grid-form-layout">
+                                    <div class="form-group">
+                                        <label for="newPat_firstName">First Name: <span class="required-asterisk">*</span></label>
+                                        <input type="text" id="newPat_firstName" name="first_name" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="newPat_lastName">Last Name: <span class="required-asterisk">*</span></label>
+                                        <input type="text" id="newPat_lastName" name="last_name" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="newPat_dob">DOB (MM-DD-YYYY):</label>
+                                        <input type="text" id="newPat_dob" name="dob" placeholder="MM-DD-YYYY">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="newPat_sex">Sex:</label>
+                                        <select id="newPat_sex" name="sex">
+                                            <option value="">Select...</option>
+                                            <option value="Male">Male</option>
+                                            <option value="Female">Female</option>
+                                            <option value="Other">Other</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="newPat_accountNo">Account No:</label>
+                                        <input type="text" id="newPat_accountNo" name="account_no">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="newPat_address1">Address 1:</label>
+                                        <input type="text" id="newPat_address1" name="address1">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="newPat_city">City:</label>
+                                        <input type="text" id="newPat_city" name="city">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="newPat_state">State:</label>
+                                        <input type="text" id="newPat_state" name="state">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="newPat_zip">ZIP Code:</label>
+                                        <input type="text" id="newPat_zip" name="zip_code">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="newPat_cellPhone">Cell Phone:</label>
+                                        <input type="tel" id="newPat_cellPhone" name="cell_phone">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="newPat_email">Email:</label>
+                                        <input type="email" id="newPat_email" name="email">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="newPat_race">Race:</label>
+                                        <input type="text" id="newPat_race" name="race">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="newPat_ethnicity">Ethnicity:</label>
+                                        <input type="text" id="newPat_ethnicity" name="ethnicity">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="newPat_maritalStatus">Marital Status:</label>
+                                        <select id="newPat_maritalStatus" name="marital_status">
+                                            <option value="">Select...</option>
+                                            <option value="Single">Single</option>
+                                            <option value="Married">Married</option>
+                                            <option value="Divorced">Divorced</option>
+                                            <option value="Widowed">Widowed</option>
+                                            <option value="Separated">Separated</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="newPat_pcp">PCP:</label>
+                                        <input type="text" id="newPat_pcp" name="pcp">
+                                    </div>
+                                </div>
+                                <h4>Emergency Contact</h4>
+                                <div class="grid-form-layout">
+                                    <div class="form-group">
+                                        <label for="newPat_ecName">EC Name:</label>
+                                        <input type="text" id="newPat_ecName" name="ec_name">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="newPat_ecRelation">EC Relation:</label>
+                                        <input type="text" id="newPat_ecRelation" name="ec_relation">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="newPat_ecPhone">EC Phone:</label>
+                                        <input type="tel" id="newPat_ecPhone" name="ec_phone">
+                                    </div>
+                                </div>
+                                <button type="submit" id="submitNewPatientButton" class="btn btn-primary btn-submit">
+                                    <span class="spinner" style="display: none;"></span>
+                                    <span class="btn-text">Add Patient to Database</span>
+                                </button>
+                                <div id="addPatientStatus" class="status-message" style="display: none;"></div>
+                            </form>
+                        </div>
+                        
+                        <hr class="form-divider">
+                        
+                        <div class="patient-list">
+                            <h3>Existing Patients</h3>
+                            <button id="refreshPatientListButton" class="btn btn-secondary btn-small">
+                                <i class="fas fa-sync-alt"></i>
+                                Refresh List
+                            </button>
+                            <div id="patientListContainer">
+                                <p id="patientListPlaceholder" class="info-text">Loading patients or no patients found...</p>
+                            </div>
+                        </div>
+                    </section>
+                 </div>
+            </section>
+        </main>
+
+        <footer class="app-footer">
+            <p>© 2025 PCScribe. AI for efficient medical documentation.</p>
+        </footer>
+    </div>
+
+    <script src="js/script.js"></script>
+</body>
+</html>

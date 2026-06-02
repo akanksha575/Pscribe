@@ -1,0 +1,1269 @@
+import os
+import re
+import uuid
+import datetime
+import warnings
+import mammoth
+import docx2txt
+from docx import Document
+from docx.shared import Pt, Inches
+from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
+from openai import OpenAI
+import logging
+from io import BytesIO
+from typing import Optional, List, Dict
+from .core.config import OPENAI_API_KEY
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+warnings.filterwarnings('ignore')
+
+# HTML Templates
+HTML_NOTE_TEMPLATE_1_DARK = """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {{
+            /* PCScribe Color Palette */
+            --font-family-primary: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            --font-family-accent: 'Poppins', sans-serif;
+
+            /* PCScribe Colors */
+            --color-primary: #FC4C69;           /* Primary Pink */
+            --color-primary-light: #FF6B8A;     /* Light Pink */
+            --color-primary-dark: #E03A5A;      /* Dark Pink */
+            --color-secondary: #383535;         /* Dark Gray */
+            --color-secondary-light: #5A5757;   /* Light Gray */
+            --color-accent: #FF6B6B;            /* Coral */
+            --color-success: #4CAF50;           /* Green */
+            --color-warning: #FFA726;           /* Amber */
+            --color-error: #F44336;             /* Red */
+            
+            /* Background Colors */
+            --color-background: #FFFFFF;        /* Pure white background */
+            --color-surface: #FFFFFF;           /* White surface */
+            --color-surface-hover: #F8F9FA;    /* Light gray hover */
+            
+            /* Text Colors */
+            --color-text-primary: #383535;      /* Dark Gray */
+            --color-text-secondary: #6C757D;    /* Medium Gray */
+            --color-text-light: #ADB5BD;        /* Light Gray */
+            --color-text-white: #FFFFFF;
+            
+            /* Borders & Shadows */
+            --border-light: 1px solid #E9ECEF;
+            --border-medium: 1px solid #DEE2E6;
+            --border-primary: 1px solid var(--color-primary);
+            
+            /* Shadows */
+            --shadow-soft: 0 2px 8px rgba(252, 76, 105, 0.1);
+            --shadow-medium: 0 4px 16px rgba(252, 76, 105, 0.15);
+            --shadow-strong: 0 8px 24px rgba(252, 76, 105, 0.2);
+            --shadow-card: 0 4px 12px rgba(56, 53, 53, 0.08);
+            
+            /* Border Radius */
+            --radius-small: 8px;
+            --radius-medium: 12px;
+            --radius-large: 16px;
+            --radius-xl: 20px;
+            
+            /* Transitions */
+            --transition-fast: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            --transition-medium: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            --transition-slow: 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }}
+
+        * {{
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }}
+
+        body {{
+            font-family: var(--font-family-primary);
+            line-height: 1.6;
+            color: var(--color-text-primary);
+            background: var(--color-background);
+            font-size: 11pt;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            margin: 0.75in;
+            position: relative;
+        }}
+
+        .note-container {{
+            background: var(--color-surface);
+            border: var(--border-light);
+            border-radius: var(--radius-xl);
+            box-shadow: var(--shadow-card);
+            padding: 40px;
+            position: relative;
+            overflow: visible;
+        }}
+
+        .note-container::before {{
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--color-primary), var(--color-primary-light), var(--color-success));
+            border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+        }}
+
+        .title {{
+            text-align: center;
+            font-family: var(--font-family-accent);
+            font-weight: 700;
+            font-size: 18pt;
+            margin-bottom: 30px;
+            color: var(--color-primary);
+            position: relative;
+            padding-bottom: 15px;
+        }}
+
+        .title::after {{
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80px;
+            height: 3px;
+            background: linear-gradient(90deg, var(--color-primary), var(--color-primary-light));
+            border-radius: 2px;
+        }}
+
+        .header-section {{
+            background: var(--color-surface-hover);
+            border: var(--border-light);
+            border-radius: var(--radius-large);
+            padding: 25px;
+            margin-bottom: 30px;
+            box-shadow: var(--shadow-soft);
+        }}
+
+        .header-item {{
+            margin-bottom: 12px;
+            color: var(--color-text-primary);
+            font-size: 10.5pt;
+        }}
+
+        .header-label {{
+            font-weight: 600;
+            color: var(--color-text-secondary);
+            display: inline-block;
+            min-width: 140px;
+        }}
+
+        .section-header {{
+            font-family: var(--font-family-accent);
+            font-weight: 600;
+            font-size: 13pt;
+            margin-top: 25px;
+            margin-bottom: 15px;
+            color: var(--color-primary);
+            padding: 12px 20px;
+            background: var(--color-surface-hover);
+            border: var(--border-light);
+            border-radius: var(--radius-medium);
+            border-left: 4px solid var(--color-primary);
+            box-shadow: var(--shadow-soft);
+            position: relative;
+        }}
+
+        .section-header::before {{
+            content: '';
+            display: inline-block;
+            width: 6px;
+            height: 20px;
+            background: linear-gradient(135deg, var(--color-primary), var(--color-primary-light));
+            border-radius: 3px;
+            margin-right: 12px;
+            vertical-align: middle;
+        }}
+
+        .section-content {{
+            margin-left: 0;
+            margin-bottom: 20px;
+            color: var(--color-text-primary);
+            padding: 15px 20px;
+            background: var(--color-surface);
+            border: var(--border-light);
+            border-radius: var(--radius-medium);
+            transition: all var(--transition-medium);
+        }}
+
+        .section-content:hover {{
+            background: var(--color-surface-hover);
+            transform: translateX(2px);
+        }}
+
+        .section-content p,
+        .section-content ul,
+        .section-content li {{
+            margin-top: 0;
+            margin-bottom: 8px;
+            line-height: 1.6;
+        }}
+
+        .section-content ul,
+        .section-content ol {{
+            padding-left: 25px;
+        }}
+
+        .section-content li {{
+            margin-bottom: 6px;
+        }}
+
+        .section-content strong {{
+            color: var(--color-text-secondary);
+            font-weight: 600;
+        }}
+
+        a {{
+            color: var(--color-primary);
+            text-decoration: none;
+            transition: all var(--transition-fast);
+        }}
+
+        a:hover {{
+            color: var(--color-primary-dark);
+            text-decoration: underline;
+        }}
+
+        @media print {{
+            .note-container {{
+                box-shadow: none; border: 1px solid #ddd;
+                background: white;
+            }}
+            .section-header, .section-content, .header-section {{
+                background: #f8f9fa;
+                -webkit-print-color-adjust: exact; print-color-adjust: exact;
+            }}
+        }}
+
+        @media (max-width: 768px) {{
+            body {{ margin: 0.5in; font-size: 10pt; }}
+            .note-container {{ padding: 25px; }}
+            .title {{ font-size: 16pt; }}
+            .section-header {{ font-size: 12pt; padding: 10px 15px; }}
+            .section-content {{ padding: 12px 15px; }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="note-container">
+        <div class="title">CLINICAL NOTE (EMR Detailed)</div>
+        
+        <div class="header-section">
+            {patient_header_injection_template1}
+            <div class="header-item"><span class="header-label">Note ID:</span> {note_id}</div>
+            <div class="header-item"><span class="header-label">Provider:</span> {provider}</div>
+            <div class="header-item"><span class="header-label">Date of Notes Evaluated:</span> {date}</div>
+        </div>
+        
+        <div class="section-content">{reason}</div>
+        
+        <div class="section-content">{hpi}</div>
+        
+        <div class="section-content">{ros}</div>
+        
+        <div class="section-content">{vitals}</div>
+        
+        <div class="section-content">{pe}</div>
+        
+        <div class="section-content">{assessments}</div>
+        
+        <div class="section-content">{treatment}</div>
+        
+        <div class="section-content">{procedure}</div>
+        
+        <div class="section-content">{followup}</div>
+        
+        <div class="section-content">{medications}</div>
+        
+        <div class="section-content">{allergies}</div>
+        \
+        <div class="section-content">{pmh}</div>
+        
+        <div class="section-content">{surgical}</div>
+        
+        <div class="section-content">{family}</div>
+        
+        <div class="section-content">{social}</div>
+    </div>
+</body>
+</html>
+"""
+
+HTML_NOTE_TEMPLATE_2_SOAP_DARK = """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {{
+            /* PCScribe Color Palette */
+            --font-family-primary: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            --font-family-accent: 'Poppins', sans-serif;
+
+            /* PCScribe Colors */
+            --color-primary: #FC4C69;           /* Primary Pink */
+            --color-primary-light: #FF6B8A;     /* Light Pink */
+            --color-primary-dark: #E03A5A;      /* Dark Pink */
+            --color-secondary: #383535;         /* Dark Gray */
+            --color-secondary-light: #5A5757;   /* Light Gray */
+            --color-accent: #FF6B6B;            /* Coral */
+            --color-success: #4CAF50;           /* Green */
+            --color-warning: #FFA726;           /* Amber */
+            --color-error: #F44336;             /* Red */
+            
+            /* Background Colors */
+            --color-background: #FFFFFF;        /* Pure white background */
+            --color-surface: #FFFFFF;           /* White surface */
+            --color-surface-hover: #F8F9FA;    /* Light gray hover */
+            
+            /* Text Colors */
+            --color-text-primary: #383535;      /* Dark Gray */
+            --color-text-secondary: #6C757D;    /* Medium Gray */
+            --color-text-light: #ADB5BD;        /* Light Gray */
+            --color-text-white: #FFFFFF;
+            
+            /* Borders & Shadows */
+            --border-light: 1px solid #E9ECEF;
+            --border-medium: 1px solid #DEE2E6;
+            --border-primary: 1px solid var(--color-primary);
+            
+            /* Shadows */
+            --shadow-soft: 0 2px 8px rgba(252, 76, 105, 0.1);
+            --shadow-medium: 0 4px 16px rgba(252, 76, 105, 0.15);
+            --shadow-strong: 0 8px 24px rgba(252, 76, 105, 0.2);
+            --shadow-card: 0 4px 12px rgba(56, 53, 53, 0.08);
+            
+            /* Border Radius */
+            --radius-small: 8px;
+            --radius-medium: 12px;
+            --radius-large: 16px;
+            --radius-xl: 20px;
+            
+            /* Transitions */
+            --transition-fast: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            --transition-medium: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            --transition-slow: 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }}
+
+        * {{
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }}
+
+        body {{
+            font-family: var(--font-family-primary);
+            line-height: 1.5;
+            font-size: 11.5pt;
+            background: var(--color-background);
+            color: var(--color-text-primary);
+            margin: 0.75in;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            position: relative;
+        }}
+
+        .soap-container {{
+            background: var(--color-surface);
+            border: var(--border-light);
+            border-radius: var(--radius-xl);
+            box-shadow: var(--shadow-card);
+            padding: 40px;
+            position: relative;
+            overflow: visible;
+        }}
+
+        .soap-container::before {{
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--color-primary), var(--color-primary-light), var(--color-success));
+            border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+        }}
+
+        .title {{
+            text-align: center;
+            font-family: var(--font-family-accent);
+            font-weight: 700;
+            font-size: 20pt;
+            margin-bottom: 35px;
+            text-transform: uppercase;
+            color: var(--color-primary);
+            letter-spacing: 2px;
+            position: relative;
+            padding-bottom: 15px;
+        }}
+
+        .title::after {{
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 100px;
+            height: 3px;
+            background: linear-gradient(90deg, var(--color-primary), var(--color-primary-light));
+            border-radius: 2px;
+        }}
+
+        .header-table {{
+            width: 100%;
+            margin-bottom: 30px;
+            border-collapse: separate;
+            border-spacing: 0;
+            background: var(--color-surface-hover);
+            border: var(--border-light);
+            border-radius: var(--radius-large);
+            overflow: hidden;
+            box-shadow: var(--shadow-soft);
+        }}
+
+        .header-table td {{
+            padding: 15px 20px;
+            vertical-align: top;
+            border-bottom: 1px solid rgba(252, 76, 105, 0.1);
+            border-right: 1px solid rgba(252, 76, 105, 0.1);
+            font-size: 10.5pt;
+            transition: all var(--transition-medium);
+        }}
+
+        .header-table td:last-child {{ border-right: none; }}
+        .header-table tr:last-child td {{ border-bottom: none; }}
+        .header-table td:hover {{ background: var(--color-surface-hover); }}
+
+        .header-label {{
+            font-weight: 600;
+            padding-right: 8px;
+            color: var(--color-text-secondary);
+            display: inline-block;
+            min-width: 120px;
+        }}
+
+        .soap-section {{
+            margin-top: 30px;
+            margin-bottom: 25px;
+            background: var(--color-surface);
+            border: var(--border-light);
+            border-radius: var(--radius-large);
+            overflow: visible;
+            box-shadow: var(--shadow-soft);
+            transition: all var(--transition-medium);
+        }}
+
+        .soap-section:hover {{
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-medium);
+        }}
+
+        .soap-header {{
+            font-family: var(--font-family-accent);
+            font-weight: 700;
+            font-size: 16pt;
+            margin-bottom: 0;
+            color: var(--color-text-white);
+            padding: 20px 25px;
+            background: linear-gradient(135deg, var(--color-primary), var(--color-primary-light));
+            border-bottom: none;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.1);
+        }}
+
+        .soap-header::before {{
+            content: '';
+            display: inline-block;
+            width: 8px;
+            height: 28px;
+            background: var(--color-text-white);
+            border-radius: 4px;
+            opacity: 0.9;
+        }}
+
+        .soap-content {{
+            padding: 25px;
+            background: var(--color-surface);
+        }}
+
+        .soap-content p,
+        .soap-content ul,
+        .soap-content li {{
+            margin-top: 0;
+            margin-bottom: 12px;
+            line-height: 1.6;
+        }}
+
+        .soap-content ul {{ padding-left: 25px; }}
+        .soap-content li {{ margin-bottom: 8px; }}
+
+        .section-divider {{
+            margin: 20px 0;
+            border: 0;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--color-primary-light), transparent);
+            border-radius: 1px;
+        }}
+
+        .sub-label {{
+            font-weight: 600;
+            color: var(--color-text-secondary);
+            display: inline-block;
+            min-width: 140px;
+            margin-right: 8px;
+        }}
+
+        .sub-label::after {{
+            content: '';
+            display: inline-block;
+            width: 4px;
+            height: 4px;
+            background: var(--color-primary);
+            border-radius: 50%;
+            margin-left: 8px;
+            vertical-align: middle;
+        }}
+
+        a {{
+            color: var(--color-primary);
+            text-decoration: none;
+            transition: all var(--transition-fast);
+        }}
+
+        a:hover {{
+            color: var(--color-primary-dark);
+            text-decoration: underline;
+        }}
+
+        @media print {{
+            .soap-container, .soap-section, .header-table {{
+                box-shadow: none;
+                background: white; border: 1px solid #ddd;
+            }}
+            .soap-header {{
+                background: var(--color-primary) !important;
+                -webkit-print-color-adjust: exact; print-color-adjust: exact;
+            }}
+            .soap-content {{
+                background: #f8f9fa;
+                -webkit-print-color-adjust: exact; print-color-adjust: exact;
+            }}
+        }}
+
+        @media (max-width: 768px) {{
+            body {{ margin: 0.5in; font-size: 10.5pt; }}
+            .soap-container {{ padding: 25px; }}
+            .title {{ font-size: 18pt; }}
+            .soap-header {{ font-size: 14pt; padding: 15px 20px; }}
+            .soap-content {{ padding: 20px; }}
+            .header-table td {{ padding: 12px 15px; font-size: 10pt; }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="soap-container">
+        <div class="title">SOAP NOTE</div>
+        
+        <table class="header-table">
+            <tr>
+                <td><span class="header-label">Patient:</span> {patient_full_name}</td>
+                <td><span class="header-label">DOB:</span> {patient_dob}</td>
+            </tr>
+            <tr>
+                <td><span class="header-label">Account #:</span> {patient_account_no}</td>
+                <td><span class="header-label">Sex:</span> {patient_sex}</td>
+            </tr>
+            <tr>
+                <td><span class="header-label">Date of Service:</span> {date}</td>
+                <td><span class="header-label">Provider:</span> {provider}</td>
+            </tr>
+            <tr>
+                <td colspan="2"><span class="header-label">Note ID:</span> {note_id}</td>
+            </tr>
+            <tr>
+                <td colspan="2"><span class="header-label">Address:</span> {patient_address_full}</td>
+            </tr>
+            <tr>
+                <td><span class="header-label">Phone:</span> {patient_cell_phone}</td>
+                <td><span class="header-label">Email:</span> {patient_email}</td>
+            </tr>
+            <tr>
+                <td><span class="header-label">PCP:</span> {patient_pcp}</td>
+                <td><span class="header-label">Marital Status:</span> {patient_marital_status}</td>
+            </tr>
+        </table>
+
+        <div class="soap-section">
+            <div class="soap-header">S (Subjective)</div>
+            <div class="soap-content">
+                <p><span class="sub-label">Reason for Visit:</span> {reason}</p>
+                <p><span class="sub-label">HPI:</span> {hpi}</p>
+                <p><span class="sub-label">ROS:</span> {ros}</p>
+                <hr class="section-divider">
+                <p><span class="sub-label">Medications:</span> {medications}</p>
+                <p><span class="sub-label">Allergies:</span> {allergies}</p>
+                <p><span class="sub-label">PMH:</span> {pmh}</p>
+                <p><span class="sub-label">Surgical Hx:</span> {surgical}</p>
+                <p><span class="sub-label">Family Hx:</span> {family}</p>
+                <p><span class="sub-label">Social Hx:</span> {social} (Race: {patient_race}, Ethnicity: {patient_ethnicity})</p>
+            </div>
+        </div>
+
+        <div class="soap-section">
+            <div class="soap-header">O (Objective)</div>
+            <div class="soap-content">
+                <p><span class="sub-label">Vital Signs:</span> {vitals}</p>
+                <p><span class="sub-label">Physical Exam:</span> {pe}</p>
+                <p><span class="sub-label">Procedures:</span> {procedure}</p>
+            </div>
+        </div>
+
+        <div class="soap-section">
+            <div class="soap-header">A (Assessment)</div>
+            <div class="soap-content">{assessments}</div>
+        </div>
+
+        <div class="soap-section">
+            <div class="soap-header">P (Plan)</div>
+            <div class="soap-content">
+                <p><span class="sub-label">Treatment:</span> {treatment}</p>
+                <p><span class="sub-label">Follow Up:</span> {followup}</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+"""
+
+AVAILABLE_TEMPLATES = {
+    "EMR_DETAILED": {"name": "EMR Detailed", "html": HTML_NOTE_TEMPLATE_1_DARK},
+    "SOAP_NOTE": {"name": "SOAP Note", "html": HTML_NOTE_TEMPLATE_2_SOAP_DARK}
+}
+DEFAULT_TEMPLATE_ID = "EMR_DETAILED"
+
+ALL_REQUESTED_SECTION_IDS = [
+    "reason", "hpi", "ros", "vitals", "pe", "assessments", "treatment",
+    "procedure", "followup", "medications", "allergies", "pmh",
+    "surgical", "family", "social"
+]
+
+# Descriptions for each section (used if anonymize_content is True)
+SECTION_DESCRIPTIONS = {
+    "reason": "<p>This section outlines the primary reason(s) the patient presented for the medical encounter.</p>",
+    "hpi": "<p>The History of Present Illness details the chronological account of the patient's chief complaint, including onset, duration, location, quality, severity, timing, context, modifying factors, and associated signs/symptoms.</p>",
+    "ros": "<p>The Review of Systems is an inventory of body systems obtained by asking a series of questions to identify signs and/or symptoms which the patient may be experiencing or has experienced.</p>",
+    "vitals": "<p>This section lists the patient's vital signs recorded during the encounter, such as temperature, pulse, respiration rate, blood pressure, and oxygen saturation.</p>",
+    "pe": "<p>The Physical Examination section documents the findings from the clinician's direct examination of the patient, organized by body system or area.</p>",
+    "assessments": "<p>This section includes the clinician's diagnostic impressions, a summary of the patient's problems, and differential diagnoses considered.</p>",
+    "treatment": "<p>The Treatment Plan outlines the therapeutic interventions, medications prescribed or adjusted, procedures recommended, and patient education provided.</p>",
+    "procedure": "<p>This section details any medical procedures performed during the encounter, including technique, findings, and any complications.</p>",
+    "followup": "<p>Follow Up Instructions specify the plan for subsequent care, including return appointments, referrals, and monitoring instructions.</p>",
+    "medications": "<p>A list of the patient's current medications, including prescription drugs, over-the-counter medications, and supplements.</p>",
+    "allergies": "<p>This section documents any known allergies or adverse reactions to medications, foods, or other substances.</p>",
+    "pmh": "<p>Past Medical History includes a summary of the patient's significant past illnesses, injuries, hospitalizations, and chronic conditions.</p>",
+    "surgical": "<p>Surgical History lists any past surgical procedures the patient has undergone, including dates and outcomes if known.</p>",
+    "family": "<p>Family History documents hereditary diseases or conditions present in the patient's family members that may be relevant to the patient's health.</p>",
+    "social": "<p>Social History covers relevant lifestyle factors such as occupation, living situation, substance use (tobacco, alcohol, illicit drugs), diet, exercise, and social support systems.</p>"
+}
+
+
+ORDERED_PATIENT_KEYS = [
+    "first_name", "last_name", "dob", "sex", "account_no",
+    "address1", "city", "state", "zip", "cell_phone", "email",
+    "race", "ethnicity", "marital_status", "pcp",
+    "ec_name", "ec_relation", "ec_phone"
+]
+
+
+class PCScribe:
+    def __init__(self, api_key=None):
+        self.api_key = api_key or OPENAI_API_KEY # Use provided key or fallback to global
+        if not self.api_key:
+            logger.warning("OpenAI API key not provided. AI features will mock/fail.")
+        self.openai_client = OpenAI(api_key=self.api_key) if self.api_key else None
+        self.active_template_id = DEFAULT_TEMPLATE_ID
+        self.patient_info = {}
+        self.temp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'temp_notes')
+        os.makedirs(self.temp_dir, exist_ok=True)
+
+    def set_template(self, template_id: str):
+        if template_id in AVAILABLE_TEMPLATES:
+            self.active_template_id = template_id
+            logger.info(f"Switched to template: {AVAILABLE_TEMPLATES[template_id]['name']}")
+        else:
+            self.active_template_id = DEFAULT_TEMPLATE_ID
+            logger.warning(f"Template ID '{template_id}' not found. Using default.")
+
+    def set_patient_info(self, patient_data: dict):
+        self.patient_info = patient_data
+        logger.info(f"Patient information updated in PCScribe for patient: {self.patient_info.get('first_name', '')} {self.patient_info.get('last_name', '')}")
+
+    def generate_unique_id(self): return str(uuid.uuid4())
+    def get_current_date(self): return datetime.datetime.now().strftime("%m/%d/%Y")
+
+    def extract_text_from_docx(self, docx_file_path_or_stream):
+        try:
+            if isinstance(docx_file_path_or_stream, str):
+                with open(docx_file_path_or_stream, "rb") as file_obj:
+                    result = mammoth.extract_raw_text(file_obj)
+                    text = result.value
+                if not text.strip():
+                    text = docx2txt.process(docx_file_path_or_stream)
+            else:
+                docx_file_path_or_stream.seek(0)
+                result = mammoth.extract_raw_text(docx_file_path_or_stream)
+                text = result.value
+                if not text.strip():
+                    docx_file_path_or_stream.seek(0)
+                    text = docx2txt.process(docx_file_path_or_stream)
+            return text
+        except Exception as e:
+            logger.error(f"Error extracting text with mammoth/docx2txt: {e}")
+            try:
+                if isinstance(docx_file_path_or_stream, str):
+                    doc = Document(docx_file_path_or_stream)
+                else:
+                    docx_file_path_or_stream.seek(0)
+                    doc = Document(docx_file_path_or_stream)
+                text = "\n".join([para.text for para in doc.paragraphs])
+                return text
+            except Exception as e2:
+                logger.error(f"All DOCX extraction methods failed: {e2}")
+                raise ValueError(f"Failed to extract text from DOCX: {e2}")
+
+
+    def preprocess_transcript(self, transcript):
+        cleaned_text = re.sub(r'\s+', ' ', transcript).strip()
+        speaker_pattern = r'(Doctor|Dr\.|Physician|Patient|Pt\.)\s*:'
+        return re.sub(speaker_pattern, r'\n\1:', cleaned_text)
+
+    def query_openai(self, transcript):
+        if not self.openai_client:
+            logger.warning("No OpenAI client. Using mock AI response.")
+            return {section_id: f"<p>Mock content for {section_id}.</p><ul><li>Mock item A</li></ul>" for section_id in ALL_REQUESTED_SECTION_IDS}
+
+        system_prompt = f"""
+        You are PCScribe, an AI medical documentation assistant.
+        Generate a comprehensive clinical note from the transcript with the following detailed sections.
+        If information for a section is not present in the transcript, state 'Not discussed.' or 'N/A' within that section's content.
+        The sections required are: {', '.join(ALL_REQUESTED_SECTION_IDS)}.
+
+        VERY IMPORTANT ANONYMIZATION RULES - APPLY THESE RIGOROUSLY:
+        1.  If a patient's name is mentioned anywhere in the transcript, you MUST replace it with 'Patient X' in ALL your generated content for ALL sections. For example, instead of "Liam Chen presents...", write "Patient X presents...".
+        2.  If a patient's specific age (e.g., "35 years old", "age 20") is mentioned, you MUST replace it with 'Age Y' or 'Y years old' in ALL your generated content for ALL sections.
+        3.  Do NOT include any other specific Personally Identifiable Information (PII) like full addresses, phone numbers, or full dates of birth (unless it's just the year for age context, then use 'Age Y') from the transcript itself into the note sections. Use general terms if PII is discussed.
+        4.  Do NOT include other ddetails like Email, Race, Ethnicity, Marital Status, PCP and the Emergency Contact information
+
+        FORMATTING:
+        Format your response ONLY with HTML sections, each starting with <section id="section_name"> and ending with </section>. Example: <section id="hpi"><p>Patient X reported...</p><ul><li>Symptom Y</li></ul></section>
+        Use standard HTML: <p> for paragraphs, <ul> and <li> for bulleted lists.
+        """
+
+        patient_info_prompt_addition = ""
+        # Provide general context from self.patient_info but remind AI to follow anonymization rules for transcript content
+        if self.patient_info:
+            patient_info_prompt_addition = "\nPATIENT DEMOGRAPHICS (for general context only, do not repeat PII in the note sections unless anonymized as per rules):\n"
+            temp_patient_info = self.patient_info.copy() # Work with a copy for display in prompt
+
+            # Anonymize specific fields for the prompt context display if they exist
+            if 'first_name' in temp_patient_info or 'last_name' in temp_patient_info:
+                patient_info_prompt_addition += f"- Patient Name Context: Patient X\n"
+            if 'dob' in temp_patient_info:
+                 # Extract year for age context if possible, otherwise just mention DOB exists
+                try:
+                    dob_date = datetime.datetime.strptime(str(temp_patient_info['dob']), "%Y-%m-%d") # Assuming YYYY-MM-DD
+                    age = (datetime.datetime.now() - dob_date).days // 365.25
+                    patient_info_prompt_addition += f"- Patient Age Context: Approximately Y (derived from DOB)\n"
+                except:
+                    patient_info_prompt_addition += f"- Patient DOB Context: Exists (details anonymized)\n"
+
+            for key in ORDERED_PATIENT_KEYS:
+                if key not in ['first_name', 'last_name', 'dob'] and key in temp_patient_info and temp_patient_info[key]:
+                    display_key = key.replace('_', ' ').title()
+                    # For other PII, just indicate presence or general type
+                    if key in ["account_no", "address1", "city", "state", "zip", "cell_phone", "email", "ec_name", "ec_phone"]:
+                        patient_info_prompt_addition += f"- {display_key}: (Contextual data present, ensure anonymization in note)\n"
+                    else:
+                        patient_info_prompt_addition += f"- {display_key}: {temp_patient_info[key]}\n"
+
+
+        estimated_tokens = len(transcript) // 3
+        max_transcript_tokens_for_model = 12000
+        if estimated_tokens > max_transcript_tokens_for_model:
+            logger.info(f"Transcript is very long (estimated {estimated_tokens} tokens), applying truncation to fit model limit.")
+            transcript = transcript[:max_transcript_tokens_for_model*3]
+
+        user_prompt = f"""
+        Please analyze this patient-doctor conversation and generate a complete clinical note, adhering strictly to the anonymization rules (Patient X, Age Y) and formatting instructions.
+        {patient_info_prompt_addition}
+        Focus on clinical details from the conversation.
+
+        TRANSCRIPT:
+        {transcript}
+
+        Respond only with the HTML sections ({', '.join(ALL_REQUESTED_SECTION_IDS)}) as specified in the system prompt.
+        """
+
+        try:
+            logger.info("Calling OpenAI API (gpt-3.5-turbo)...")
+            response = self.openai_client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.1,
+                max_tokens=4000
+            )
+            html_content = response.choices[0].message.content if response.choices and response.choices[0].message else ""
+            if not html_content: raise ValueError("OpenAI API returned empty content.")
+
+            extracted_sections = {}
+            default_msg = "<p>Not discussed or N/A.</p>"
+            for section_id in ALL_REQUESTED_SECTION_IDS:
+                match = re.search(fr'<section id="{section_id}"[^>]*>(.*?)</section>', html_content, re.DOTALL | re.IGNORECASE)
+                if match:
+                    content = match.group(1).strip()
+                    if content and not content.startswith(("<p", "<ul", "<ol", "<div")): extracted_sections[section_id] = f"<p>{content}</p>"
+                    elif content: extracted_sections[section_id] = content
+                    else: extracted_sections[section_id] = default_msg
+                else: extracted_sections[section_id] = default_msg
+            return extracted_sections
+        except Exception as e:
+            logger.error(f"OpenAI API call/processing error: {e}", exc_info=True)
+            return {section_id: f"<p>Error generating content for {section_id}: {e}</p>" for section_id in ALL_REQUESTED_SECTION_IDS}
+
+    # def generate_html_note(self, note_sections, provider_name="Unknown Provider", anonymize_pii=False, anonymize_content_with_descriptions=False):
+    #     note_id_for_display = self.generate_unique_id()
+    #     current_date_str = self.get_current_date()
+    #     template_html = AVAILABLE_TEMPLATES[self.active_template_id]["html"]
+
+    #     # Prepare patient data for the template header
+    #     patient_template_data = {
+    #         "patient_full_name": f"{self.patient_info.get('first_name','')} {self.patient_info.get('last_name','')} ".strip() or "N/A",
+    #         "patient_dob": self.patient_info.get("dob", "N/A"),
+    #         "patient_account_no": self.patient_info.get("account_no", "N/A"),
+    #         "patient_sex": self.patient_info.get("sex", "N/A"),
+    #         "patient_address1": self.patient_info.get("address1", "N/A"),
+    #         "patient_city": self.patient_info.get("city", "N/A"),
+    #         "patient_state": self.patient_info.get("state", "N/A"),
+    #         "patient_zip": self.patient_info.get("zip", "N/A"),
+    #         "patient_address_full": (f"{self.patient_info.get('address1','')} {self.patient_info.get('city','')} {self.patient_info.get('state','')} {self.patient_info.get('zip','')}").replace("  ", " ").strip(", ") or "N/A",
+    #         "patient_cell_phone": self.patient_info.get("cell_phone", "N/A"),
+    #         "patient_email": self.patient_info.get("email", "N/A"),
+    #         "patient_race": self.patient_info.get("race", "N/A"),
+    #         "patient_ethnicity": self.patient_info.get("ethnicity", "N/A"),
+    #         "patient_marital_status": self.patient_info.get("marital_status", "N/A"),
+    #         "patient_pcp": self.patient_info.get("pcp", "N/A"),
+    #         "patient_ec_name": self.patient_info.get("ec_name", "N/A"),
+    #         "patient_ec_relation": self.patient_info.get("ec_relation", "N/A"),
+    #         "patient_ec_phone": self.patient_info.get("ec_phone", "N/A")
+    #     }
+    #     if isinstance(patient_template_data["patient_dob"], (datetime.date, datetime.datetime)):
+    #          patient_template_data["patient_dob"] = patient_template_data["patient_dob"].strftime("%m-%d-%Y")
+
+
+    #     # Anonymize PII in the header if requested
+    #     if anonymize_pii or anonymize_content_with_descriptions: # If full content anonymization, PII should also be anonymized
+    #         patient_template_data = {
+    #             "patient_full_name": "Patient X",
+    #             "patient_dob": "MM-DD-YYYY (Age: Y)", # Indicate age placeholder
+    #             "patient_account_no": "ACCOUNTXXXXX",
+    #             "patient_sex": patient_template_data["patient_sex"] or "Not Specified", # Keep sex if provided, or use general
+    #             "patient_address1": "Patient Address Line 1",
+    #             "patient_city": "Patient City", "patient_state": "Patient State", "patient_zip": "PZIPX",
+    #             "patient_address_full": "Patient Full Address, City, State, PZIPX",
+    #             "patient_cell_phone": "(XXX) XXX-XXXX", "patient_email": "patient.x@emailprovider.com",
+    #             "patient_race": patient_template_data["patient_race"] or "Not Specified",
+    #             "patient_ethnicity": patient_template_data["patient_ethnicity"] or "Not Specified",
+    #             "patient_marital_status": patient_template_data["patient_marital_status"] or "Not Specified",
+    #             "patient_pcp": "Provider PCP",
+    #             "patient_ec_name": "Emergency Contact Person",
+    #             "patient_ec_relation": "Relationship to Patient",
+    #             "patient_ec_phone": "(XXX) XXX-XXXX"
+    #         }
+    #         provider_name = "Attending Provider" # Anonymize provider name as well
+
+    #     # Prepare section content
+    #     final_note_sections = {}
+    #     if anonymize_content_with_descriptions:
+    #         logger.info("Anonymizing content with section descriptions.")
+    #         for section_id in ALL_REQUESTED_SECTION_IDS:
+    #             final_note_sections[section_id] = SECTION_DESCRIPTIONS.get(section_id, "<p>Description not available for this section.</p>")
+    #     else:
+    #         # Use AI-generated sections (which should already be somewhat anonymized by the prompt)
+    #         for section_id in ALL_REQUESTED_SECTION_IDS:
+    #             final_note_sections[section_id] = note_sections.get(section_id, "<p>Content not available.</p>")
+
+
+    #     format_values = {
+    #         "note_id": note_id_for_display,
+    #         "provider": provider_name,
+    #         "date": current_date_str,
+    #         **patient_template_data,
+    #         **final_note_sections # Use potentially description-replaced sections
+    #     }
+
+    #     patient_header_injection_template1 = ""
+    #     if self.active_template_id == "EMR_DETAILED": # Patient info is passed to this template
+    #         # Use the (potentially anonymized) patient_template_data for the header
+    #         pat_name_display = format_values['patient_full_name']
+    #         pat_dob_display = format_values['patient_dob']
+    #         if anonymize_pii or anonymize_content_with_descriptions:
+    #             pat_name_display = "Patient X"
+    #             pat_dob_display = "MM-DD-YYYY (Age: Y)"
+
+
+    #         patient_header_injection_template1 = f"""
+    #         <div class="header-item"><span class="header-label">Patient:</span> {pat_name_display}</div>
+    #         <div class="header-item"><span class="header-label">DOB:</span> {pat_dob_display}</div>
+    #         <div class="header-item"><span class="header-label">Sex:</span> {format_values['patient_sex']}</div>
+    #         <div class="header-item"><span class="header-label">Account #:</span> {format_values['patient_account_no']}</div>"""
+    #         if format_values['patient_cell_phone'] and format_values['patient_cell_phone'] not in ["N/A", "(XXX) XXX-XXXX"]:
+    #             patient_header_injection_template1 += f"""<div class="header-item"><span class="header-label">Phone:</span> {format_values['patient_cell_phone']}</div>"""
+    #         if format_values['patient_address_full'] and format_values['patient_address_full'] not in ["N/A", "Patient Full Address, City, State, PZIPX"]:
+    #             patient_header_injection_template1 += f"""<div class="header-item"><span class="header-label">Address:</span> {format_values['patient_address_full']}</div>"""
+    #     format_values["patient_header_injection_template1"] = patient_header_injection_template1
+
+    #     try:
+    #         html_note = template_html.format(**format_values)
+    #     except KeyError as e:
+    #         logger.error(f"Template formatting error: Missing key {e}. Check template placeholders. Available keys: {list(format_values.keys())}", exc_info=True)
+    #         html_note = f"<h1>Error Generating Note</h1><p>Template key missing: {e}. Please check server logs.</p>"
+    #         # Log available section data for debugging
+    #         for sid_debug in ALL_REQUESTED_SECTION_IDS:
+    #              html_note += f"<h2>{sid_debug.upper()}</h2><div>{final_note_sections.get(sid_debug, 'Not found in final_note_sections')}</div>"
+
+    #     return html_note, note_id_for_display
+
+    def generate_html_note(self, note_sections: dict, provider_name: str = "Unknown Provider", anonymize_pii: bool = False, anonymize_content_with_descriptions: bool = False):
+        """
+        Generates an HTML clinical note based on provided sections and patient information.
+
+        Args:
+            note_sections (dict): A dictionary where keys are section_ids (e.g., "hpi", "ros")
+                                  and values are the HTML content for those sections,
+                                  presumably generated by an AI and already prompted for
+                                  basic anonymization like "Patient X", "Age Y".
+            provider_name (str): The name of the provider for the note header.
+            anonymize_pii (bool): If True, PII in the note's header (from self.patient_info)
+                                   will be replaced with placeholders.
+            anonymize_content_with_descriptions (bool): If True, the content of all clinical
+                                                        sections (from note_sections) will be
+                                                        replaced with generic descriptions of
+                                                        what each section should contain. This
+                                                        also implies anonymize_pii for the header.
+
+        Returns:
+            tuple: (html_note_content_str, transient_note_id_str)
+        """
+        note_id_for_display = self.generate_unique_id()
+        current_date_str = self.get_current_date()
+        
+        if self.active_template_id not in AVAILABLE_TEMPLATES:
+            logger.error(f"Active template ID '{self.active_template_id}' not found. Falling back to default.")
+            self.active_template_id = DEFAULT_TEMPLATE_ID # Fallback
+        
+        template_info = AVAILABLE_TEMPLATES[self.active_template_id]
+        template_html = template_info["html"]
+        template_name_for_title = template_info["name"]
+
+
+        # Prepare patient data for the template header, fetched from self.patient_info
+        # This data will be used to populate placeholders like {patient_full_name}, {patient_dob} etc.
+        # in the HTML template's header section.
+        patient_template_data = {
+            "patient_full_name": f"{self.patient_info.get('first_name','')} {self.patient_info.get('last_name','')} ".strip() or "N/A",
+            "patient_dob": self.patient_info.get("dob", "N/A"), # Expects string, ensure conversion if it's date object
+            "patient_account_no": self.patient_info.get("account_no", "N/A"),
+            "patient_sex": self.patient_info.get("sex", "N/A"),
+            "patient_address1": self.patient_info.get("address1", "N/A"),
+            "patient_city": self.patient_info.get("city", "N/A"),
+            "patient_state": self.patient_info.get("state", "N/A"),
+            "patient_zip": self.patient_info.get("zip", "N/A"), # Note: your form had patient_zip_code
+            "patient_address_full": (f"{self.patient_info.get('address1','')} {self.patient_info.get('city','')} {self.patient_info.get('state','')} {self.patient_info.get('zip','')}").replace("  ", " ").strip(", ") or "N/A",
+            "patient_cell_phone": self.patient_info.get("cell_phone", "N/A"),
+            "patient_email": self.patient_info.get("email", "N/A"),
+            "patient_race": self.patient_info.get("race", "N/A"),
+            "patient_ethnicity": self.patient_info.get("ethnicity", "N/A"),
+            "patient_marital_status": self.patient_info.get("marital_status", "N/A"),
+            "patient_pcp": self.patient_info.get("pcp", "N/A"),
+            "patient_ec_name": self.patient_info.get("ec_name", "N/A"),
+            "patient_ec_relation": self.patient_info.get("ec_relation", "N/A"),
+            "patient_ec_phone": self.patient_info.get("ec_phone", "N/A")
+        }
+        # Ensure DOB is a string if it came as a date object from self.patient_info
+        if isinstance(patient_template_data["patient_dob"], (datetime.date, datetime.datetime)):
+             patient_template_data["patient_dob"] = patient_template_data["patient_dob"].strftime("%m-%d-%Y")
+
+
+        # Anonymize PII in the header if requested
+        # This modifies `patient_template_data` which is used for {patient_...} placeholders
+        if anonymize_pii or anonymize_content_with_descriptions:
+            logger.info("Anonymizing PII in note header.")
+            patient_template_data = {
+                "patient_full_name": "Patient X",
+                "patient_dob": "MM-DD-YYYY (Age: Y)",
+                "patient_account_no": "ACCOUNTXXXXX",
+                "patient_sex": patient_template_data.get("sex") or "Not Specified",
+                "patient_address1": "Patient Address Line 1",
+                "patient_city": "Patient City", "patient_state": "Patient State", "patient_zip": "PZIPX",
+                "patient_address_full": "Patient Full Address, City, State, PZIPX",
+                "patient_cell_phone": "(XXX) XXX-XXXX", "patient_email": "patient.x@emailprovider.com",
+                "patient_race": patient_template_data.get("race") or "Not Specified",
+                "patient_ethnicity": patient_template_data.get("ethnicity") or "Not Specified",
+                "patient_marital_status": patient_template_data.get("marital_status") or "Not Specified",
+                "patient_pcp": "Provider PCP",
+                "patient_ec_name": "Emergency Contact Person",
+                "patient_ec_relation": "Relationship to Patient",
+                "patient_ec_phone": "(XXX) XXX-XXXX"
+            }
+            provider_name = "Attending Provider" # Anonymize provider name as well
+
+        # Prepare section content for placeholders like {hpi}, {ros}
+        final_note_sections = {}
+        if anonymize_content_with_descriptions:
+            logger.info("Anonymizing clinical content by replacing with section descriptions.")
+            for section_id in ALL_REQUESTED_SECTION_IDS:
+                final_note_sections[section_id] = SECTION_DESCRIPTIONS.get(section_id, f"<p>Description for '{section_id}' not available.</p>")
+        else:
+            # Use AI-generated sections. The AI was prompted to use "Patient X", "Age Y"
+            # for names/ages found IN THE TRANSCRIPT. This content is used directly.
+            logger.info("Using AI-generated content for clinical sections (AI prompted for basic anonymization).")
+            for section_id in ALL_REQUESTED_SECTION_IDS:
+                final_note_sections[section_id] = note_sections.get(section_id, "<p>Content not provided for this section.</p>")
+
+
+        # Consolidate all values for template formatting
+        format_values = {
+            "note_id": note_id_for_display,
+            "provider": provider_name,
+            "date": current_date_str,
+            "template_title": f"CLINICAL NOTE ({template_name_for_title.upper()})", # Example title
+            **patient_template_data,  # For header placeholders like {patient_full_name}
+            **final_note_sections     # For content placeholders like {hpi}, {ros}
+        }
+        
+        # Specific injection for EMR_DETAILED template's patient header block
+        patient_header_injection_template1 = ""
+        if self.active_template_id == "EMR_DETAILED":
+            # Use the (potentially anonymized) patient_template_data from `format_values`
+            pat_name_display = format_values.get('patient_full_name', 'Patient X')
+            pat_dob_display = format_values.get('patient_dob', 'MM-DD-YYYY (Age: Y)')
+            
+            patient_header_injection_template1 = f"""
+            <div class="header-item"><span class="header-label">Patient:</span> {pat_name_display}</div>
+            <div class="header-item"><span class="header-label">DOB:</span> {pat_dob_display}</div>
+            <div class="header-item"><span class="header-label">Sex:</span> {format_values.get('patient_sex','N/A')}</div>
+            <div class="header-item"><span class="header-label">Account #:</span> {format_values.get('patient_account_no','N/A')}</div>"""
+            
+            # Conditionally add phone and address if they are not the default "N/A" or anonymized placeholders
+            phone_val = format_values.get('patient_cell_phone')
+            if phone_val and phone_val not in ["N/A", "(XXX) XXX-XXXX"]:
+                patient_header_injection_template1 += f"""<div class="header-item"><span class="header-label">Phone:</span> {phone_val}</div>"""
+            
+            address_val = format_values.get('patient_address_full')
+            if address_val and address_val not in ["N/A", "Patient Full Address, City, State, PZIPX"]:
+                patient_header_injection_template1 += f"""<div class="header-item"><span class="header-label">Address:</span> {address_val}</div>"""
+        
+        format_values["patient_header_injection_template1"] = patient_header_injection_template1
+        
+        try:
+            # Ensure all expected placeholders in the HTML template are present in format_values
+            # Missing keys in format_values that are present in the template will cause a KeyError
+            html_note = template_html.format(**format_values)
+        except KeyError as e:
+            missing_key = str(e).strip("'")
+            logger.error(
+                f"Template formatting error: Missing key '{missing_key}' for template '{self.active_template_id}'. "
+                f"Ensure the key is provided in `format_values` or remove/default it in the HTML template. "
+                f"Available keys in format_values: {list(format_values.keys())}",
+                exc_info=True
+            )
+            # Fallback HTML to indicate an error
+            html_note = f"""
+                <h1>Error Generating Note Preview</h1>
+                <p>A configuration error occurred: The template expected a piece of information (key: '{missing_key}') that was not available.</p>
+                <p>Please contact support or check server logs for more details.</p>
+                <h2>Debugging Information (Content Sections Provided):</h2>
+            """
+            for sid_debug in ALL_REQUESTED_SECTION_IDS:
+                 html_note += f"<h3>{sid_debug.upper()}</h3><div>{final_note_sections.get(sid_debug, '<i>Not found in final_note_sections</i>')}</div><hr>"
+        
+        return html_note, note_id_for_display
+
+    def convert_html_to_docx_bytes(self, html_content: str) -> bytes:
+        doc = Document()
+        # Set page margins
+        for section_doc in doc.sections:
+            section_doc.top_margin = Inches(0.75)
+            section_doc.bottom_margin = Inches(0.75)
+            section_doc.left_margin = Inches(0.75)
+            section_doc.right_margin = Inches(0.75)
+
+        def basic_html_strip(html_text: Optional[str]) -> str:
+            if not html_text: return ""
+            text = str(html_text) # Ensure it's a string
+            text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
+            text = re.sub(r'</p>\s*<p[^>]*>', '\n\n', text, flags=re.IGNORECASE)
+            text = re.sub(r'<li[^>]*>', '\n  • ', text, flags=re.IGNORECASE)
+            text = re.sub(r'</?(?:ul|ol|p|div|section|header|footer|nav|article|aside)[^>]*>', '', text, flags=re.IGNORECASE)
+            text = re.sub(r'<span class="(?:header-label|sub-label)"[^>]*>(.*?)</span>', r'\1', text, flags=re.IGNORECASE)
+            text = re.sub(r'<[^>]+>', '', text)
+            text = text.replace(' ', ' ').replace('&', '&').replace('<', '<').replace('>', '>')
+            text = text.replace('•', '•')
+            return text.strip()
+
+        # 1. Document Title
+        title_match = re.search(r'<div class="title"[^>]*>(.*?)</div>', html_content, re.DOTALL | re.IGNORECASE)
+        if title_match:
+            title_text = basic_html_strip(title_match.group(1))
+            if title_text:
+                p_title = doc.add_paragraph()
+                run_title = p_title.add_run(title_text)
+                run_title.bold = True; run_title.font.size = Pt(16)
+                p_title.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+                doc.add_paragraph() # Add a blank line for spacing
+
+        # 2. Header Information (Patient Demographics, Note Meta)
+        header_items_combined = [] # Initialize to an empty list
+
+        # Attempt to parse header from EMR_DETAILED style (<div class="header-section">)
+        header_section_match = re.search(r'<div class="header-section"[^>]*>(.*?)</div>', html_content, re.DOTALL | re.IGNORECASE)
+        if header_section_match:
+            header_section_html = header_section_match.group(1)
+            # Note: header_div_items_html is local to this block now
+            header_div_items_html = re.findall(r'<div class="header-item"[^>]*>(.*?)</div>', header_section_html, re.DOTALL | re.IGNORECASE)
+            for item_html in header_div_items_html:
+                item_text = basic_html_strip(item_html)
+                if item_text:
+                    header_items_combined.append(item_text)
+        
+        # If no items from header-section, try to parse from SOAP style (<table class="header-table">)
+        if not header_items_combined: # Check if the first parsing attempt yielded results
+            table_match = re.search(r'<table class="header-table"[^>]*>(.*?)</table>', html_content, re.DOTALL | re.IGNORECASE)
+            if table_match:
+                table_html = table_match.group(1)
+                # Optional: Add a title for table data if you want a separator
+                # if not header_items_combined: # This check is implicitly true here if we reached this block
+                #     header_items_combined.append("--- Patient & Visit Information ---")
+                
+                rows_html = re.findall(r'<tr[^>]*>(.*?)</tr>', table_html, re.DOTALL | re.IGNORECASE)
+                for row_html in rows_html:
+                    cols_html = re.findall(r'<td[^>]*>(.*?)</td>', row_html, re.DOTALL | re.IGNORECASE)
+                    row_parts = [basic_html_strip(col_html) for col_html in cols_html if basic_html_strip(col_html)]
+                    row_text = " | ".join(filter(None, row_parts)) # Join non-empty, stripped column texts
+                    if row_text:
+                        header_items_combined.append(row_text)
+
+        # Add collected header items to the DOCX
+        if header_items_combined:
+            for item_text in header_items_combined:
+                if item_text.strip(): # Ensure non-empty after stripping
+                    doc.add_paragraph(item_text)
+            doc.add_paragraph() # Add a blank line for spacing after the header block
+
+        # 3. Main Clinical Sections
+        section_pattern = r'<div class="(?:section-header|soap-header)"[^>]*>(.*?)</div>\s*<div class="(?:section-content|soap-content)"[^>]*>(.*?)</div>'
+        sections_found = re.findall(section_pattern, html_content, re.DOTALL | re.IGNORECASE)
+
+        for section_header_html, section_content_html in sections_found:
+            header_text = basic_html_strip(section_header_html).replace("• ", "").strip() # Clean potential bullets
+            if header_text:
+                doc.add_heading(header_text, level=1)
+
+            content_text = basic_html_strip(section_content_html)
+            if content_text.strip():
+                lines = content_text.split('\n')
+                current_paragraph_text = ""
+                for line in lines:
+                    stripped_line = line.strip()
+                    if not stripped_line: # Empty line signifies a potential paragraph break
+                        if current_paragraph_text:
+                            doc.add_paragraph(current_paragraph_text)
+                            current_paragraph_text = ""
+                        continue # Skip adding an empty paragraph for the blank line itself
+
+                    if stripped_line.startswith('•'): # Bullet point
+                        if current_paragraph_text: # Add any preceding paragraph text first
+                            doc.add_paragraph(current_paragraph_text)
+                            current_paragraph_text = ""
+                        try:
+                            doc.add_paragraph(stripped_line.lstrip('• ').strip(), style='ListBullet')
+                        except KeyError: # If 'ListBullet' style doesn't exist in the default template
+                            logger.debug("Style 'ListBullet' not found. Adding bulleted item as plain text.")
+                            doc.add_paragraph(stripped_line) # Add as plain text
+                    else: # Regular text line
+                        if current_paragraph_text:
+                            current_paragraph_text += " " + stripped_line
+                        else:
+                            current_paragraph_text = stripped_line
+                
+                if current_paragraph_text: # Add any remaining paragraph text
+                    doc.add_paragraph(current_paragraph_text)
+            else: # If content_text was empty or just whitespace
+                 doc.add_paragraph("N/A")
+            doc.add_paragraph() # Add a blank line for spacing after each section
+
+        # 4. Fallback for unparsed content
+        if not title_match and not header_items_combined and not sections_found:
+            logger.warning("Could not parse structured content from HTML note. Adding raw stripped text as fallback.")
+            fallback_p = doc.add_paragraph()
+            fallback_p.add_run("--- Note Content (Fallback Parsing) ---").bold = True
+            doc.add_paragraph(basic_html_strip(html_content))
+
+        file_stream = BytesIO()
+        doc.save(file_stream)
+        file_stream.seek(0)
+        return file_stream.getvalue()
+
+    def process_transcript_text(self, transcript_text: str, provider_name="Unknown Provider", anonymize_pii=False, anonymize_content_with_descriptions=False):
+        try:
+            if not transcript_text: raise ValueError("Transcript text cannot be empty.")
+            preprocessed_transcript = self.preprocess_transcript(transcript_text)
+            # The AI query itself now handles initial anonymization (Patient X, Age Y)
+            note_sections_from_ai = self.query_openai(preprocessed_transcript)
+            # generate_html_note handles further PII anonymization in headers and optional content description replacement
+            html_note_content, transient_note_id = self.generate_html_note(
+                note_sections_from_ai,
+                provider_name,
+                anonymize_pii=anonymize_pii,
+                anonymize_content_with_descriptions=anonymize_content_with_descriptions
+            )
+            docx_bytes = self.convert_html_to_docx_bytes(html_note_content)
+
+            logger.info(f"Clinical note generated from text (transient ID: {transient_note_id})")
+            return html_note_content, docx_bytes, transient_note_id
+        except Exception as e:
+            logger.error(f"Error processing transcript text: {e}", exc_info=True)
+            raise ValueError(f"Failed to process transcript text: {str(e)}")
+
+    def process_uploaded_docx(self, docx_path_or_stream, provider_name="Unknown Provider", anonymize_pii=False, anonymize_content_with_descriptions=False):
+        try:
+            transcript = self.extract_text_from_docx(docx_path_or_stream)
+            return self.process_transcript_text(
+                transcript,
+                provider_name,
+                anonymize_pii=anonymize_pii,
+                anonymize_content_with_descriptions=anonymize_content_with_descriptions
+            )
+        except Exception as e: # Catch specific exceptions if needed
+            logger.error(f"Error in process_uploaded_docx: {e}", exc_info=True)
+            raise # Re-raise the exception to be handled by the caller

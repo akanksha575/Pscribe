@@ -1,0 +1,5 @@
+venv/
+temp_notes/
+patient_data/
+../../transcripts/
+.env
