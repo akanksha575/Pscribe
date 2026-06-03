@@ -32,12 +32,13 @@ if encryption_key and encrypted_password:
     # If placed directly into a connection URL, they can break the URI parsing. 
     # urllib.parse.quote_plus safely encodes these characters (e.g., '@' becomes '%40').
     encoded_password = urllib.parse.quote_plus(db_password)
-    
-    # 5. Dynamically construct the SQLAlchemy connection string.
-    DATABASE_URL = (
-        f"postgresql://postgres:{encoded_password}"
-        "@db.qadbdfryabxjuboizmds.supabase.co:5432/postgres"
-    )
+    # Construct connection string for Supabase Transaction Pooler (regional)
+    supabase_url = os.getenv("SUPABASE_URL")
+    if supabase_url:
+        project_ref = supabase_url.split("//")[1].split(".")[0]
+        DATABASE_URL = f"postgresql://postgres.{project_ref}:{encoded_password}@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres?sslmode=require&project={project_ref}"
+    else:
+        DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("SQLALCHEMY_DATABASE_URL")
 else:
     # Fallback to standard environment variables if encryption is not configured.
     DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("SQLALCHEMY_DATABASE_URL")

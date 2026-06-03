@@ -1,3 +1,4 @@
+import logging
 import os
 import uuid
 import shutil
@@ -5,7 +6,6 @@ from supabase import create_client
 from fastapi import FastAPI, Form, Depends, HTTPException, UploadFile, File
 from dotenv import load_dotenv
 import logging
-import os
 
 env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
 load_dotenv(dotenv_path=env_path)
@@ -101,7 +101,7 @@ async def signup(email: str = Form(...), password: str = Form(...), full_name: s
 @app.on_event("startup")
 async def startup_event():
     logger.info("Creating database tables if they don't exist...")
-    create_db_tables()
+    # create_db_tables()  # Disabled: using Supabase client instead of local DB
     logger.info("Database tables checked/created.")
 
 # --- Patient Endpoints ---
@@ -138,56 +138,58 @@ async def list_patients(skip: int = 0, limit: int = 100, db: Session = Depends(g
 
 @app.get("/api/patients/{patient_id}", response_model=schemas.PatientDisplay)
 async def get_patient(patient_id: int, db: Session = Depends(get_db)):
-    db_patient = db.query(db_models.Patient).options(selectinload(db_models.Patient.documents)).filter(db_models.Patient.id == patient_id).first()
-    if db_patient is None:
+    result = supabase.from_("patients").select("*").eq("id", patient_id).execute()
+    if not result.data:
         raise HTTPException(status_code=404, detail="Patient not found")
-    return db_patient
+    patient_data = result.data[0]
+    return schemas.PatientDisplay(**patient_data)
 
-@app.get("/api/patients/search/", response_model=List[schemas.PatientDisplay]) 
-async def search_patients(
-    name: Optional[str] = None,
-    dob: Optional[str] = None, 
-    account_no: Optional[str] = None,
-    db: Session = Depends(get_db)
-):
-    query = db.query(db_models.Patient)
-    
-    if name:
-        name_parts = name.split(',')
-        if len(name_parts) > 1:
-            last_name_query = name_parts[0].strip()
-            first_name_query = name_parts[1].strip()
-            query = query.filter(
-                db_models.Patient.last_name.ilike(f"%{last_name_query}%"),
-                db_models.Patient.first_name.ilike(f"%{first_name_query}%")
-            )
-        elif name.strip(): 
-            name_query = name.strip()
-            query = query.filter(
-                or_(
-                    db_models.Patient.last_name.ilike(f"%{name_query}%"),
-                    db_models.Patient.first_name.ilike(f"%{name_query}%")
+    @app.get("/api/patients/search/", response_model=List[schemas.PatientDisplay])
+    async def search_patients(
+        name: Optional[str] = None,
+        dob: Optional[str] = None,
+        account_no: Optional[str] = None,
+        db: Session = Depends(get_db)
+    ):
+        # Build a Supabase query instead of using SQLAlchemy
+        supabase_query = supabase.from_("patients").select("*")
+        if name:
+            name_parts = name.split(',')
+            if len(name_parts) > 1:
+                # Search by explicit last and first name parts
+                supabase_query = (
+                    supabase_query
+                    .filter("last_name", "ilike", f"%{name_parts[0].strip()}%")
+                    .filter("first_name", "ilike", f"%{name_parts[1].strip()}%")
                 )
-            )
-    
-    if dob:
-        try:
-            dob_date = dt_datetime.strptime(dob, "%Y-%m-%d").date()
-        except ValueError:
+            else:
+                q = name.strip()
+                # OR filter for either column matching the query
+                supabase_query = supabase_query.or_(f"last_name.ilike.%{q}%,first_name.ilike.%{q}%")
+        if dob:
             try:
-                dob_date = dt_datetime.strptime(dob, "%m-%d-%Y").date()
+                dob_date = dt_datetime.strptime(dob, "%Y-%m-%d").date()
             except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid DOB format. Use YYYY-MM-DD or MM-DD-YYYY.")
-        query = query.filter(db_models.Patient.dob == dob_date)
-
-    if account_no:
-        query = query.filter(db_models.Patient.account_no.ilike(f"%{account_no}%"))
-    
-    if not name and not dob and not account_no:
-        raise HTTPException(status_code=400, detail="Please provide at least one search criteria (name, DOB, or account number).")
-
-    patients = query.order_by(db_models.Patient.last_name, db_models.Patient.first_name).limit(20).all()
-    return patients
+                try:
+                    dob_date = dt_datetime.strptime(dob, "%m-%d-%Y").date()
+                except ValueError:
+                    raise HTTPException(status_code=400, detail="Invalid DOB format. Use YYYY-MM-DD or MM-DD-YYYY.")
+            supabase_query = supabase_query.filter("dob", "eq", dob_date.isoformat())
+        if account_no:
+            supabase_query = supabase_query.filter("account_no", "ilike", f"%{account_no}%")
+        if not name and not dob and not account_no:
+            raise HTTPException(status_code=400, detail="Please provide at least one search criteria (name, DOB, or account number).")
+        # Order and limit
+        result = (
+            supabase_query
+            .order("last_name", "asc")
+            .order("first_name", "asc")
+            .limit(20)
+            .execute()
+        )
+        patients = result.data if result and hasattr(result, "data") else []
+        # Convert raw rows to Pydantic response models
+        return [schemas.PatientDisplay(**p) for p in patients]
 
 
 # --- Document Upload/Download Endpoints ---
@@ -636,4 +638,4 @@ async def download_document_by_filename(filename: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, app_dir=os.path.dirname(__file__) or ".")
+    uvicorn.run("app.main:app", host="127.0.0.1", port=8002, reload=True)

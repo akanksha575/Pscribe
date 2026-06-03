@@ -81,7 +81,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let audioChunks = [];
     let recordedAudioBlob = null;
 
-    const API_BASE_URL = 'http://localhost:8000/api';
+    const API_BASE_URL = 'http://localhost:8002/api';
     let currentGeneratedDocId = null; 
     let selectedPatient = null;
     let selectedTranscript = null;
